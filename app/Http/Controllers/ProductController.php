@@ -5,92 +5,123 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\Category;
+use Illuminate\Support\Facades\File;
 
 class ProductController extends Controller
 {
-
-    public function index() {
+    /**
+     * Menampilkan daftar produk (Dashboard + Tabel)
+     */
+    public function index()
+    {
+    // Hapus latest(), gunakan get() saja
     $products = Product::with('category')->get();
     $categories = Category::all();
+
     return view('products.index', compact('products', 'categories'));
     }
 
+    /**
+     * Form tambah produk
+     */
     public function create()
     {
-    $categories = Category::all();
-    return view('products.create', compact('categories'));
+        $categories = Category::all();
+        return view('products.create', compact('categories'));
     }
 
-
-
+    /**
+     * Simpan produk baru
+     */
     public function store(Request $request)
     {
-    $data = $request->all();
+        // 1. Validasi Input
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'category_id' => 'required|exists:categories,id',
+            'stock' => 'required|numeric|min:0',
+            'unit' => 'nullable|string|max:50',
+            'location' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+        ]);
 
-    if ($request->hasFile('image')) {
-        // 1. Ambil file
-        $file = $request->file('image');
-        // 2. Beri nama unik agar tidak bentrok
-        $nama_file = time() . "_" . $file->getClientOriginalName();
-        // 3. Simpan ke folder 'public/products'
-        $file->move(public_path('images'), $nama_file);
-        // 4. Masukkan nama file ke array data untuk disimpan di DB
-        $data['image'] = $nama_file;
+        $data = $request->all();
+
+        // 2. Olah Upload Gambar
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            $nama_file = time() . "_" . $file->getClientOriginalName();
+
+            // Simpan ke public/images
+            $file->move(public_path('images'), $nama_file);
+            $data['image'] = $nama_file;
+        }
+
+        Product::create($data);
+
+        return redirect('/products')->with('success', 'Produk berhasil ditambahkan!');
     }
 
-    Product::create($data);
-    return redirect('/products');
-    }
-
+    /**
+     * Form edit produk
+     */
     public function edit($id)
     {
-    $product = Product::findOrFail($id);
-    $categories = Category::all();
-    return view('products.edit', compact('product','categories'));
+        $product = Product::findOrFail($id);
+        $categories = Category::all();
+        return view('products.edit', compact('product', 'categories'));
     }
 
-    //public function update(Request $request, $id)
-    //{
-    //$product = Product::findOrFail($id);
-    //$product->update($request->all());
-    //return redirect('/products');
-    //}
-
+    /**
+     * Update produk lama
+     */
     public function update(Request $request, $id)
-{
-    // 1. Validasi Input
-    $request->validate([
-        'name' => 'required|string|max:255',
-        'category_id' => 'required|exists:categories,id',
-        'stock' => 'required|numeric|min:0',
-        'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048', // Maks 2MB, harus gambar
-    ]);
+    {
+        // 1. Validasi Input
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'category_id' => 'required|exists:categories,id',
+            'stock' => 'required|numeric|min:0',
+            'unit' => 'nullable|string|max:50',
+            'location' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+        ]);
 
-    $product = Product::findOrFail($id);
-    $data = $request->all();
+        $product = Product::findOrFail($id);
+        $data = $request->all();
 
-    if ($request->hasFile('image')) {
-        // 1. Hapus foto lama jika ada di folder public/images
+        if ($request->hasFile('image')) {
+            // Hapus foto lama jika ada agar folder images tetap bersih
+            if ($product->image && file_exists(public_path('images/' . $product->image))) {
+                unlink(public_path('images/' . $product->image));
+            }
+
+            // Upload foto baru
+            $file = $request->file('image');
+            $nama_file = time() . "_" . $file->getClientOriginalName();
+            $file->move(public_path('images'), $nama_file);
+            $data['image'] = $nama_file;
+        }
+
+        $product->update($data);
+
+        return redirect('/products')->with('success', 'Produk berhasil diperbarui!');
+    }
+
+    /**
+     * Hapus produk dan filenya
+     */
+    public function destroy($id)
+    {
+        $product = Product::findOrFail($id);
+
+        // Hapus file fisik gambar dari folder public/images sebelum data dihapus dari DB
         if ($product->image && file_exists(public_path('images/' . $product->image))) {
             unlink(public_path('images/' . $product->image));
         }
 
-        // 2. Upload foto baru
-        $file = $request->file('image');
-        $nama_file = time() . "_" . $file->getClientOriginalName();
-        $file->move(public_path('images'), $nama_file);
-        $data['image'] = $nama_file;
+        $product->delete();
+
+        return redirect('/products')->with('success', 'Produk berhasil dihapus!');
     }
-
-    $product->update($data);
-    return redirect('/products')->with('success', 'Produk berhasil diupdate!');
-}
-
-    public function destroy($id)
-    {
-    $product = Product::findOrFail($id);
-    $product->delete();
-    return redirect('/products');
-    }
-
 }
